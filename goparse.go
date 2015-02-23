@@ -24,14 +24,14 @@ const (
 	_DELETE
 )
 
-type ParseApi struct {
-	ParseAppId  string
-	ParseApiKey string
-	Client      *http.Client
-	queryQueue  chan query
+type credentials struct {
+	parseAppId   string
+	parseApiKey  string
+	client       *http.Client
+	requestQueue chan request
 }
 
-type query struct {
+type request struct {
 	method      int
 	url         string
 	form        url.Values
@@ -45,103 +45,126 @@ type response struct {
 	err     error
 }
 
-func ParseClient(AppId string, AppKey string, c appengine.Context) *ParseApi {
-	queue := make(chan query)
-	client := &ParseApi{}
+type CreateResponse struct {
+	CreatedAt string `json:"createdAt"`
+	ObjectId  string `json:"objectId"`
+}
+
+type UpdateResponse struct {
+	UpdatedAt string `json:"updatedAt"`
+}
+
+type deleteResponse struct {
+	dummy string
+}
+
+func Client(AppId string, AppKey string, c appengine.Context) *credentials {
+	queue := make(chan request)
+	client := &credentials{}
 	if c != nil {
-		client = &ParseApi{
-			ParseAppId:  AppId,
-			ParseApiKey: AppKey,
-			Client:      urlfetch.Client(c),
-			queryQueue:  queue,
+		client = &credentials{
+			parseAppId:   AppId,
+			parseApiKey:  AppKey,
+			client:       urlfetch.Client(c),
+			requestQueue: queue,
 		}
 	} else {
-		client = &ParseApi{
-			ParseAppId:  AppId,
-			ParseApiKey: AppKey,
-			Client:      http.DefaultClient,
-			queryQueue:  queue,
+		client = &credentials{
+			parseAppId:   AppId,
+			parseApiKey:  AppKey,
+			client:       http.DefaultClient,
+			requestQueue: queue,
 		}
 	}
 	go client.throttledQuery()
 	return client
 }
 
-func (c ParseApi) Create(className string, v url.Values, reqData io.Reader, resData interface{}) (interface{}, error) {
+func (c credentials) CreateObject(className string, reqData io.Reader) (*CreateResponse, error) {
 	response_ch := make(chan response)
-	c.queryQueue <- query{_POST, parseUrl + className, v, reqData, &resData, response_ch}
-	return resData, (<-response_ch).err
+	var cr CreateResponse
+	c.requestQueue <- request{_POST, parseUrl + className, nil, reqData, &cr, response_ch}
+	rc := (<-response_ch)
+	return rc.resData.(*CreateResponse), rc.err
 }
 
-func (c ParseApi) Retrieve(className string, objectId string, v url.Values, resData interface{}) (interface{}, error) {
+func (c credentials) RetrieveObject(className string, objectId string, v url.Values, resData interface{}) (interface{}, error) {
 	response_ch := make(chan response)
-	c.queryQueue <- query{_GET, parseUrl + className + "/" + objectId, v, nil, resData, response_ch}
-	return resData, (<-response_ch).err
+	c.requestQueue <- request{_GET, parseUrl + className + "/" + objectId, v, nil, resData, response_ch}
+	rc := (<-response_ch)
+	return rc.resData, rc.err
 }
 
-func (c ParseApi) Update(className string, objectId string, v url.Values, resData interface{}) (interface{}, error) {
+func (c credentials) RetrieveObjects(className string, v url.Values, resData interface{}) (interface{}, error) {
 	response_ch := make(chan response)
-	c.queryQueue <- query{_PUT, parseUrl + className + "/" + objectId, v, nil, &resData, response_ch}
-	return resData, (<-response_ch).err
+	c.requestQueue <- request{_GET, parseUrl + className, v, nil, resData, response_ch}
+	rc := (<-response_ch)
+	return rc.resData, rc.err
 }
 
-func (c ParseApi) Delete(className string, objectId string, v url.Values, resData interface{}) (interface{}, error) {
+func (c credentials) UpdateObject(className string, objectId string, reqData io.Reader) (*UpdateResponse, error) {
 	response_ch := make(chan response)
-	c.queryQueue <- query{_DELETE, parseUrl + className + "/" + objectId, v, nil, &resData, response_ch}
-	return resData, (<-response_ch).err
+	var ur UpdateResponse
+	c.requestQueue <- request{_PUT, parseUrl + className + "/" + objectId, nil, reqData, &ur, response_ch}
+	rc := (<-response_ch)
+	return rc.resData.(*UpdateResponse), rc.err
 }
 
-func (c ParseApi) execQuery(method int, urlStr string, form url.Values, reqData io.Reader, resData interface{}) error {
-	switch method {
-	case _POST:
-		return c.execHttpRequest("POST", urlStr, form, reqData, resData)
-	case _GET:
-		return c.execHttpRequest("GET", urlStr, form, reqData, resData)
-	case _PUT:
-		return c.execHttpRequest("PUT", urlStr, form, reqData, resData)
-	case _DELETE:
-		return c.execHttpRequest("DELETE", urlStr, form, reqData, resData)
-	default:
-		return fmt.Errorf("HTTP method not yet supported")
-	}
+func (c credentials) DeleteObject(className string, objectId string) error {
+	response_ch := make(chan response)
+	var dr deleteResponse
+	c.requestQueue <- request{_DELETE, parseUrl + className + "/" + objectId, nil, nil, &dr, response_ch}
+	return (<-response_ch).err
 }
 
-func (c *ParseApi) throttledQuery() {
-	for q := range c.queryQueue {
-		method := q.method
-		url := q.url
-		form := q.form
-		reqData := q.reqData
-		resData := q.resData
-
-		response_ch := q.response_ch
-		err := c.execQuery(method, url, form, reqData, resData)
+func (c *credentials) throttledQuery() {
+	for r := range c.requestQueue {
+		response_ch := r.response_ch
+		resData, err := c.execHttpRequest(r.method, r.url, r.form, r.reqData, r.resData)
+		if err != nil {
+			// TODO Check rate-limit and retry
+		}
 		response_ch <- response{resData, err}
 	}
 }
 
-func (c ParseApi) execHttpRequest(method string, urlStr string, form url.Values, reqData io.Reader, resData interface{}) error {
+func (c credentials) execHttpRequest(method int, url string, form url.Values, reqData io.Reader, resData interface{}) (interface{}, error) {
+	var methodStr string
+	switch method {
+	case _POST:
+		methodStr = "POST"
+	case _GET:
+		methodStr = "GET"
+	case _PUT:
+		methodStr = "PUT"
+	case _DELETE:
+		methodStr = "DELETE"
+	default:
+		return nil, fmt.Errorf("HTTP method not yet supported")
+	}
 	query := form.Encode()
-	req, _ := http.NewRequest(method, urlStr+"?"+query, reqData)
-	req.Header.Set(parseAppIdHeader, c.ParseAppId)
-	req.Header.Add(parseApiKeyHeader, c.ParseApiKey)
+	req, _ := http.NewRequest(methodStr, url+"?"+query, reqData)
+	req.Header.Set(parseAppIdHeader, c.parseAppId)
+	req.Header.Add(parseApiKeyHeader, c.parseApiKey)
 	req.Header.Add(contentTypeHeader, contentType)
-	res, err := c.Client.Do(req)
+	res, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer res.Body.Close()
 	return decodeResponse(res, resData)
 }
 
-func decodeResponse(res *http.Response, resData interface{}) error {
+func decodeResponse(res *http.Response, resData interface{}) (interface{}, error) {
+	fmt.Printf("decode: %s\n", resData)
 	if (res.StatusCode != 200) && (res.StatusCode != 201) {
-		return newApiError(res)
+		return nil, newApiError(res)
 	}
-	return json.NewDecoder(res.Body).Decode(resData)
+	err := json.NewDecoder(res.Body).Decode(resData)
+	return resData, err
 }
 
-type ParseErrorResponse struct {
+type ErrorResponse struct {
 	Code  int    `json:"code"`
 	Error string `json:"error"`
 }
@@ -151,20 +174,20 @@ type ApiError struct {
 	StatusCode int
 	Header     http.Header
 	Body       string
-	Decoded    ParseErrorResponse
+	Decoded    ErrorResponse
 	URL        *url.URL
 }
 
 func newApiError(res *http.Response) *ApiError {
 	data, _ := ioutil.ReadAll(res.Body)
 
-	var parseErrorRes ParseErrorResponse
-	_ = json.Unmarshal(data, &parseErrorRes)
+	var errorResponse ErrorResponse
+	_ = json.Unmarshal(data, &errorResponse)
 	return &ApiError{
 		StatusCode: res.StatusCode,
 		Header:     res.Header,
 		Body:       string(data),
-		Decoded:    parseErrorRes,
+		Decoded:    errorResponse,
 		URL:        res.Request.URL,
 	}
 }
