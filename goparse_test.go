@@ -24,11 +24,11 @@ type BlogResults struct {
 
 var (
 	APPID  = os.Getenv("PARSE_APP_ID")
-	APPKEY = os.Getenv("PARSE_APP_KEY")
+	APIKEY = os.Getenv("PARSE_API_KEY")
 )
 
 func TestRetrieveObjectNotFound(t *testing.T) {
-	cli := Client(APPID, APPKEY, nil)
+	cli := Client(APPID, APIKEY, nil)
 	v := url.Values{}
 	var blog Blog
 	res, err := cli.RetrieveObject("devBlog", "testKey", v, &blog)
@@ -52,7 +52,7 @@ func TestAuthError(t *testing.T) {
 }
 
 func TestRetrieveObject(t *testing.T) {
-	cli := Client(APPID, APPKEY, nil)
+	cli := Client(APPID, APIKEY, nil)
 	v := url.Values{}
 	var b Blog
 	res, err := cli.RetrieveObject("devBlog", "bPVTnpZOEL", v, &b)
@@ -65,7 +65,7 @@ func TestRetrieveObject(t *testing.T) {
 }
 
 func TestRetrieveObjects(t *testing.T) {
-	cli := Client(APPID, APPKEY, nil)
+	cli := Client(APPID, APIKEY, nil)
 	v := url.Values{}
 	v.Set("limit", "2")
 	con, _ := json.Marshal(map[string]string{"Name": "佐藤　麗奈"})
@@ -86,7 +86,7 @@ func TestRetrieveObjects(t *testing.T) {
 var ObjectId string
 
 func TestCreateObject(t *testing.T) {
-	cli := Client(APPID, APPKEY, nil)
+	cli := Client(APPID, APIKEY, nil)
 	blog := Blog{
 		Name:   "佐藤　麗奈",
 		HashId: "aabbcc",
@@ -105,7 +105,7 @@ func TestCreateObject(t *testing.T) {
 }
 
 func TestUpdateObject(t *testing.T) {
-	cli := Client(APPID, APPKEY, nil)
+	cli := Client(APPID, APIKEY, nil)
 	blog := Blog{
 		Name:   "佐藤　麗奈",
 		HashId: "aabbcc",
@@ -123,7 +123,7 @@ func TestUpdateObject(t *testing.T) {
 }
 
 func TestDeleteObject(t *testing.T) {
-	cli := Client(APPID, APPKEY, nil)
+	cli := Client(APPID, APIKEY, nil)
 	err := cli.DeleteObject("devBlog", ObjectId)
 	if err != nil {
 		t.Errorf(err.Error())
