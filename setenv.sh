@@ -1,2 +1,0 @@
-export PARSE_APP_ID="hZHuAXJPfYxtVIYb8rgQHj4rcMmDkcvOYX4cecgt"
-export PARSE_API_KEY="W8IjY683oSFUnJdA7SEE8pnbSAK80byDpxqz4MYk"

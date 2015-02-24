@@ -24,7 +24,7 @@ const (
 	_DELETE
 )
 
-type credentials struct {
+type ParseClient struct {
 	parseAppId   string
 	parseApiKey  string
 	client       *http.Client
@@ -58,18 +58,18 @@ type deleteResponse struct {
 	dummy string
 }
 
-func Client(AppId string, AppKey string, c appengine.Context) *credentials {
+func Client(AppId string, AppKey string, c appengine.Context) *ParseClient {
 	queue := make(chan request)
-	client := &credentials{}
+	client := &ParseClient{}
 	if c != nil {
-		client = &credentials{
+		client = &ParseClient{
 			parseAppId:   AppId,
 			parseApiKey:  AppKey,
 			client:       urlfetch.Client(c),
 			requestQueue: queue,
 		}
 	} else {
-		client = &credentials{
+		client = &ParseClient{
 			parseAppId:   AppId,
 			parseApiKey:  AppKey,
 			client:       http.DefaultClient,
@@ -80,7 +80,7 @@ func Client(AppId string, AppKey string, c appengine.Context) *credentials {
 	return client
 }
 
-func (c credentials) CreateObject(className string, reqData io.Reader) (*CreateResponse, error) {
+func (c ParseClient) CreateObject(className string, reqData io.Reader) (*CreateResponse, error) {
 	response_ch := make(chan response)
 	var cr CreateResponse
 	c.requestQueue <- request{_POST, parseUrl + className, nil, reqData, &cr, response_ch}
@@ -88,21 +88,21 @@ func (c credentials) CreateObject(className string, reqData io.Reader) (*CreateR
 	return rc.resData.(*CreateResponse), rc.err
 }
 
-func (c credentials) RetrieveObject(className string, objectId string, v url.Values, resData interface{}) (interface{}, error) {
+func (c ParseClient) RetrieveObject(className string, objectId string, v url.Values, resData interface{}) (interface{}, error) {
 	response_ch := make(chan response)
 	c.requestQueue <- request{_GET, parseUrl + className + "/" + objectId, v, nil, resData, response_ch}
 	rc := (<-response_ch)
 	return rc.resData, rc.err
 }
 
-func (c credentials) RetrieveObjects(className string, v url.Values, resData interface{}) (interface{}, error) {
+func (c ParseClient) RetrieveObjects(className string, v url.Values, resData interface{}) (interface{}, error) {
 	response_ch := make(chan response)
 	c.requestQueue <- request{_GET, parseUrl + className, v, nil, resData, response_ch}
 	rc := (<-response_ch)
 	return rc.resData, rc.err
 }
 
-func (c credentials) UpdateObject(className string, objectId string, reqData io.Reader) (*UpdateResponse, error) {
+func (c ParseClient) UpdateObject(className string, objectId string, reqData io.Reader) (*UpdateResponse, error) {
 	response_ch := make(chan response)
 	var ur UpdateResponse
 	c.requestQueue <- request{_PUT, parseUrl + className + "/" + objectId, nil, reqData, &ur, response_ch}
@@ -110,14 +110,14 @@ func (c credentials) UpdateObject(className string, objectId string, reqData io.
 	return rc.resData.(*UpdateResponse), rc.err
 }
 
-func (c credentials) DeleteObject(className string, objectId string) error {
+func (c ParseClient) DeleteObject(className string, objectId string) error {
 	response_ch := make(chan response)
 	var dr deleteResponse
 	c.requestQueue <- request{_DELETE, parseUrl + className + "/" + objectId, nil, nil, &dr, response_ch}
 	return (<-response_ch).err
 }
 
-func (c *credentials) throttledQuery() {
+func (c *ParseClient) throttledQuery() {
 	for r := range c.requestQueue {
 		response_ch := r.response_ch
 		resData, err := c.execHttpRequest(r.method, r.url, r.form, r.reqData, r.resData)
@@ -128,7 +128,7 @@ func (c *credentials) throttledQuery() {
 	}
 }
 
-func (c credentials) execHttpRequest(method int, url string, form url.Values, reqData io.Reader, resData interface{}) (interface{}, error) {
+func (c ParseClient) execHttpRequest(method int, url string, form url.Values, reqData io.Reader, resData interface{}) (interface{}, error) {
 	var methodStr string
 	switch method {
 	case _POST:
